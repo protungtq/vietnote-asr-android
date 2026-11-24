@@ -10,7 +10,6 @@ add_library(
     mp3lame
     STATIC
     lame/bitstream.c
-    lame/buffer.c
     lame/encoder.c
     lame/fft.c
     lame/gain_analysis.c
