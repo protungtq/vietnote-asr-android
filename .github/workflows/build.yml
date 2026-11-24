@@ -65,11 +65,15 @@ jobs:
       - name: Download LAME 3.100 (MP3 encoder sources)
         run: |
           curl -sL -o /tmp/lame-3.100.tar.gz "https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz/download"
-          tar xzf /tmp/lame-3.100.tar.gz -C /tmp lame-3.100/libmp3lame
+          tar xzf /tmp/lame-3.100.tar.gz -C /tmp lame-3.100/libmp3lame lame-3.100/include/lame.h
           mkdir -p app/src/main/cpp
           mv /tmp/lame-3.100/libmp3lame app/src/main/cpp/lame
-          ls app/src/main/cpp/lame/*.c | head -5
-          test -f app/src/main/cpp/lame/lame.c
+          # lame.h nằm ở include/, không nằm cùng các file .c — phải copy về
+          # cùng thư mục thì #include "lame.h" trong các file .c mới tìm thấy.
+          cp /tmp/lame-3.100/include/lame.h app/src/main/cpp/lame/lame.h
+          for f in bitstream encoder fft gain_analysis id3tag lame newmdct presets psymodel quantize quantize_pvt reservoir set_get tables takehiro util vbrquantize VbrTag version; do test -f app/src/main/cpp/lame/$f.c || exit 1; done
+          test -f app/src/main/cpp/lame/lame.h
+          ls app/src/main/cpp/lame/ | head -5
 
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
