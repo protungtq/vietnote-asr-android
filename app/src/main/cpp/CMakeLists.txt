@@ -33,6 +33,11 @@ add_library(
 # config.h (tự viết, tối giản cho Android) nằm cùng thư mục này.
 target_include_directories(mp3lame PUBLIC lame ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(mp3lame PRIVATE HAVE_CONFIG_H)
+# LAME 3.100 dùng kiểu ieee754_float32_t trong util.c/util.h (hàm fast_log2)
+# nhưng quên typedef cho nó — định nghĩa thành float (đúng bản chất:
+# số thực 32-bit chuẩn IEEE-754). Không sửa mã nguồn LAME, chỉ thêm
+# định nghĩa lúc biên dịch.
+target_compile_definitions(mp3lame PRIVATE ieee754_float32_t=float)
 target_compile_options(mp3lame PRIVATE -O3)
 
 add_library(vietnote-mp3 SHARED mp3_encoder.cpp)
