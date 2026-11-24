@@ -255,10 +255,10 @@ class MainActivity : ComponentActivity() {
 
     private fun shareFile(uri: Uri) {
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "audio/mpeg"
+            type = "audio/x-wav"
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        startActivity(Intent.createChooser(intent, "Chia sẻ file MP3"))
+        startActivity(Intent.createChooser(intent, "Chia sẻ file WAV"))
     }
 }

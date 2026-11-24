@@ -18,7 +18,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Một file MP3 đã tạo, nằm ở Download/VietNote. */
+/** Một file WAV đã tạo, nằm ở Download/VietNote. */
 data class TtsFile(
     val uri: Uri,
     val name: String,
@@ -31,13 +31,15 @@ private const val TTS_MODEL_ASSET = "tts/vi_VN-vais1000-medium.onnx"
 private const val TTS_FOLDER = "Download/VietNote"
 
 /**
- * Đọc văn bản tiếng Việt thành MP3, chạy 100% trên máy:
+ * Đọc văn bản tiếng Việt thành file WAV, chạy 100% trên máy:
  *
  * - Giọng: Piper VITS `vi_VN-vais1000-medium` (1 giọng nữ, 22050 Hz),
  *   tải từ rhasspy/piper-voices — giấy phép MIT.
  * - Chuyển văn bản thành âm vị bằng piper-phonemize (espeak-ng).
- * - Âm thanh do sherpa-onnx (OfflineTts) sinh ra, mã hóa MP3 128 kbps
- *   bằng libmp3lame (xem Mp3Encoder).
+ * - Âm thanh do sherpa-onnx (OfflineTts) sinh ra, ghi thẳng WAV 16-bit
+ *   PCM — không cần mã hóa native (bản MP3 dùng libmp3lame đã bỏ vì
+ *   build cứ gãy; Mp3Encoder.kt và app/src/main/cpp/ giờ là code chết,
+ *   chưa xóa khỏi repo).
  *
  * File .onnx.json phải nằm cạnh file .onnx trong assets (sherpa-onnx đọc
  * bảng ánh xạ âm vị từ đó); cả hai đều do workflow tải về lúc build.
@@ -79,7 +81,7 @@ class TtsEngine(private val context: Context) {
     fun sampleRate(): Int = tts?.sampleRate() ?: 22050
 
     /**
-     * Đọc [text] thành file MP3, lưu ở Download/VietNote.
+     * Đọc [text] thành file WAV, lưu ở Download/VietNote.
      * [speed]: tốc độ đọc (0.5–1.5, mặc định 1.0).
      * [onProgress]: (đoạn đã xong, tổng số đoạn).
      * Trả về Uri của file, hoặc null nếu lỗi (xem [onError]).
@@ -96,25 +98,63 @@ class TtsEngine(private val context: Context) {
         val chunks = splitIntoChunks(text)
         if (chunks.isEmpty()) return null
         return try {
-            val encoder = Mp3Encoder(engine.sampleRate(), bitrateKbps = 128)
-            val mp3 = java.io.ByteArrayOutputStream()
+            val sampleRate = engine.sampleRate()
+            val pcm = java.io.ByteArrayOutputStream()
             for ((i, chunk) in chunks.withIndex()) {
                 val audio = generateChunk(engine, chunk, speed)
                 if (audio.samples.isNotEmpty()) {
-                    val bytes = encoder.encode(audio.samples)
-                    if (bytes.isNotEmpty()) mp3.write(bytes)
+                    pcm.write(floatToPcm16(audio.samples))
                 }
                 onProgress(i + 1, chunks.size)
             }
-            val tail = encoder.flush()
-            if (tail.isNotEmpty()) mp3.write(tail)
-            encoder.close()
-            saveToDownloads(mp3.toByteArray())
+            saveToDownloads(wavBytes(pcm.toByteArray(), sampleRate))
         } catch (e: Exception) {
             Log.e(TAG, "synthesize failed", e)
             onError?.invoke("Đọc thất bại: ${e.message}")
             null
         }
+    }
+
+    /** Chuyển mẫu float [-1, 1] thành PCM 16-bit little-endian. */
+    private fun floatToPcm16(samples: FloatArray): ByteArray {
+        val out = ByteArray(samples.size * 2)
+        for (i in samples.indices) {
+            val v = (samples[i].coerceIn(-1f, 1f) * 32767f).toInt()
+            out[i * 2] = (v and 0xFF).toByte()
+            out[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+        return out
+    }
+
+    /** Gắn header WAV 44 byte (PCM mono 16-bit) lên trước dữ liệu PCM. */
+    private fun wavBytes(pcm: ByteArray, sampleRate: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream(44 + pcm.size)
+        fun tag(s: String) = out.write(s.toByteArray(Charsets.US_ASCII))
+        fun u32(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+            out.write((v shr 16) and 0xFF)
+            out.write((v shr 24) and 0xFF)
+        }
+        fun u16(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+        }
+        tag("RIFF")
+        u32(36 + pcm.size)
+        tag("WAVE")
+        tag("fmt ")
+        u32(16)
+        u16(1) // PCM
+        u16(1) // mono
+        u32(sampleRate)
+        u32(sampleRate * 2) // byte rate
+        u16(2) // block align
+        u16(16) // bits per sample
+        tag("data")
+        u32(pcm.size)
+        out.write(pcm)
+        return out.toByteArray()
     }
 
     private fun generateChunk(engine: OfflineTts, chunk: String, speed: Float) =
@@ -169,24 +209,24 @@ class TtsEngine(private val context: Context) {
         return chunks
     }
 
-    private fun saveToDownloads(mp3Bytes: ByteArray): Uri? {
+    private fun saveToDownloads(wavBytes: ByteArray): Uri? {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val name = "VietNote-$stamp.mp3"
+        val name = "VietNote-$stamp.wav"
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, "audio/mpeg")
+            put(MediaStore.Downloads.MIME_TYPE, "audio/x-wav")
             put(MediaStore.Downloads.RELATIVE_PATH, TTS_FOLDER)
         }
         val resolver = context.contentResolver
         val uri = resolver.insert(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI, values,
         ) ?: throw RuntimeException("Không tạo được file trong Download")
-        resolver.openOutputStream(uri)?.use { it.write(mp3Bytes) }
-            ?: throw RuntimeException("Không ghi được file MP3")
+        resolver.openOutputStream(uri)?.use { it.write(wavBytes) }
+            ?: throw RuntimeException("Không ghi được file WAV")
         return uri
     }
 
-    /** Liệt kê các file MP3 đã tạo trong Download/VietNote, mới nhất trước. */
+    /** Liệt kê các file WAV đã tạo trong Download/VietNote, mới nhất trước. */
     fun listFiles(): List<TtsFile> {
         // RELATIVE_PATH chỉ có từ Android 10 (API 29).
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return emptyList()
@@ -278,8 +318,8 @@ class TtsEngine(private val context: Context) {
     }
 
     companion object {
-        /** Tên file hiển thị gọn, bỏ tiền tố VietNote- và đuôi .mp3. */
+        /** Tên file hiển thị gọn, bỏ tiền tố VietNote- và đuôi .wav/.mp3. */
         fun shortName(file: TtsFile): String =
-            file.name.removePrefix("VietNote-").removeSuffix(".mp3")
+            file.name.removePrefix("VietNote-").removeSuffix(".wav").removeSuffix(".mp3")
     }
 }

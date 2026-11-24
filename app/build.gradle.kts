@@ -19,22 +19,8 @@ android {
         ndk {
             abiFilters += "arm64-v8a"
         }
-        // NDK + CMake do workflow cài đúng phiên bản này (sdkmanager).
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-O3"
-            }
-        }
-    }
-
-    // NDK ghim đúng phiên bản workflow cài, tránh máy build tự chọn NDK khác.
-    ndkVersion = "27.2.12479018"
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
+        // App giờ thuần Kotlin, không còn mã native (bản WAV bỏ libmp3lame),
+        // nên không cần externalNativeBuild hay ndkVersion nữa.
     }
 
     signingConfigs {

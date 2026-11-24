@@ -336,7 +336,7 @@ private fun TtsScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "File MP3 lưu ở Download/VietNote • Chạy 100% trên máy",
+                    "File WAV lưu ở Download/VietNote • Chạy 100% trên máy",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -412,8 +412,8 @@ private fun TtsScreen(
             Text(
                 when (state.status) {
                     TtsStatus.PREPARING -> " Đang chuẩn bị giọng đọc…"
-                    TtsStatus.GENERATING -> " Đang tạo file MP3…"
-                    else -> " Tạo file MP3"
+                    TtsStatus.GENERATING -> " Đang tạo file WAV…"
+                    else -> " Tạo file WAV"
                 },
             )
         }
