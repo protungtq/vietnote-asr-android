@@ -12,8 +12,8 @@ android {
         applicationId = "asia.so1.vietnote"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         // Chỉ build cho arm64 (máy đích: OnePlus 15) để APK nhẹ hơn.
         // AAR sherpa-onnx chứa cả 4 ABI; lọc ở đây để khỏi đóng gói thừa.
         ndk {

@@ -60,8 +60,22 @@ class TtsEngine(private val context: Context) {
         if (initStarted) return
         initStarted = true
         Thread({
+            debugLogInit()
+            debugLog("init start")
+            // Tách 2 bước ra để biết gãy ở đâu: nếu app out giữa chừng thì
+            // mở Download/VietNote/VietNote-debug.log xem dòng cuối cùng.
             try {
+                debugLog("piperPhonemizeInitialize start")
                 piperPhonemizeInitialize(context.applicationContext)
+                debugLog("piperPhonemizeInitialize done")
+            } catch (t: Throwable) {
+                Log.e(TAG, "piper init failed", t)
+                debugLog("piperPhonemizeInitialize FAILED: ${t.message}")
+                onError?.invoke("Không nạp được espeak-ng: ${t.message}")
+                return@Thread
+            }
+            try {
+                debugLog("OfflineTts create start")
                 val config = OfflineTtsConfig(
                     model = OfflineTtsModelConfig(
                         vits = OfflineTtsVitsModelConfig(model = TTS_MODEL_ASSET),
@@ -69,13 +83,53 @@ class TtsEngine(private val context: Context) {
                     ),
                 )
                 tts = OfflineTts(context.assets, config)
+                debugLog("OfflineTts create done, lang=${tts?.lang()}, sr=${tts?.sampleRate()}")
                 Log.i(TAG, "TTS ready, lang=${tts?.lang()}, sr=${tts?.sampleRate()}")
                 onReady?.invoke()
-            } catch (e: Exception) {
-                Log.e(TAG, "TTS init failed", e)
-                onError?.invoke("Không nạp được giọng đọc: ${e.message}")
+            } catch (t: Throwable) {
+                Log.e(TAG, "TTS init failed", t)
+                debugLog("OfflineTts create FAILED: ${t.message}")
+                onError?.invoke("Không nạp được giọng đọc: ${t.message}")
             }
         }, "tts-init").start()
+    }
+
+    // ---------------------------------------------------------- nhật ký lỗi
+
+    /** File log chẩn đoán trong Download/VietNote (1 file duy nhất, ghi đè
+     *  mỗi lần nạp giọng đọc). Ghi log không bao giờ được làm crash app. */
+    private var debugLogUri: Uri? = null
+
+    private fun debugLogInit() {
+        try {
+            val resolver = context.contentResolver
+            resolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                arrayOf("VietNote-debug.log"),
+            )
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "VietNote-debug.log")
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, TTS_FOLDER)
+            }
+            debugLogUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        } catch (_: Exception) {
+            debugLogUri = null
+        }
+    }
+
+    private fun debugLog(msg: String) {
+        try {
+            val uri = debugLogUri ?: return
+            val line = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date()) +
+                " " + msg + "\n"
+            context.contentResolver.openOutputStream(uri, "wa")?.use {
+                it.write(line.toByteArray(Charsets.UTF_8))
+            }
+        } catch (_: Exception) {
+            // Ghi log thất bại thì thôi, không ảnh hưởng app.
+        }
     }
 
     fun sampleRate(): Int = tts?.sampleRate() ?: 22050
