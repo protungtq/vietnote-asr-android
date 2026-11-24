@@ -28,6 +28,7 @@ data class TtsFile(
 
 private const val TAG = "VietNoteTts"
 private const val TTS_MODEL_ASSET = "tts/vi_VN-vais1000-medium.onnx"
+private const val TTS_TOKENS_ASSET = "tts/tokens.txt"
 private const val TTS_FOLDER = "Download/VietNote"
 
 /**
@@ -78,7 +79,15 @@ class TtsEngine(private val context: Context) {
                 debugLog("OfflineTts create start")
                 val config = OfflineTtsConfig(
                     model = OfflineTtsModelConfig(
-                        vits = OfflineTtsVitsModelConfig(model = TTS_MODEL_ASSET),
+                        // tokens.txt BẮT BUỘC: sherpa-onnx đổi âm vị thành id
+                        // qua bảng này; không có là generate trả về 0 mẫu
+                        // (file WAV trắng 44 byte). Sinh từ .onnx.json lúc
+                        // build, bỏ 5 nguyên âm đôi 2 ký tự (C++ chỉ nhận
+                        // 1 ký tự/dòng, gặp dòng 2 ký tự là exit() luôn).
+                        vits = OfflineTtsVitsModelConfig(
+                            model = TTS_MODEL_ASSET,
+                            tokens = TTS_TOKENS_ASSET,
+                        ),
                         numThreads = 2,
                     ),
                 )
