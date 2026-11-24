@@ -56,6 +56,36 @@ jobs:
           test $(stat -c%s app/src/main/assets/tts/vi_VN-vais1000-medium.onnx.json) -gt 1000
           ls -la app/src/main/assets/tts/
 
+      - name: Patch TTS model metadata (sherpa-onnx needs it)
+        run: |
+          # Model Piper gốc KHÔNG có metadata trong file .onnx; sherpa-onnx
+          # đọc 4 khóa bắt buộc (sample_rate, n_speakers, language, comment)
+          # lúc tạo OfflineTts và gọi exit() luôn nếu thiếu 1 khóa — app out
+          # ngay khi mở tab Đọc (đã xác minh từ file debug.log của bố).
+          # Vá metadata vào file trước khi build, giữ nguyên model.
+          python3 -m venv /tmp/onnx-venv
+          /tmp/onnx-venv/bin/pip install -q onnx
+          /tmp/onnx-venv/bin/python - <<'EOF'
+          import onnx
+          p = "app/src/main/assets/tts/vi_VN-vais1000-medium.onnx"
+          m = onnx.load(p)
+          meta = {"sample_rate": "22050", "n_speakers": "1",
+                  "language": "vi_VN", "comment": "piper"}
+          existing = {e.key for e in m.metadata_props}
+          for k, v in meta.items():
+              if k not in existing:
+                  e = m.metadata_props.add()
+                  e.key = k
+                  e.value = v
+          onnx.save(m, p)
+          got = {e.key: e.value for e in onnx.load(p).metadata_props}
+          assert got.get("sample_rate") == "22050", got
+          assert got.get("n_speakers") == "1", got
+          assert got.get("language") == "vi_VN", got
+          assert "piper" in got.get("comment", ""), got
+          print("TTS model metadata:", got)
+          EOF
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
