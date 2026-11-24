@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+app/build/
+# File nặng do workflow tải về lúc build, không commit:
+app/libs/
+app/src/main/assets/model/
+# Keystore debug dùng chung: workflow tự khôi phục từ base64 nhúng trong
+# file workflow, không commit file nhị phân này lên repo.
+debug.keystore
+.DS_Store
