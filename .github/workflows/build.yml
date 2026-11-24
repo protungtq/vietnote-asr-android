@@ -20,12 +20,6 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Install NDK + CMake
-        run: |
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses > /dev/null
-          "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1"
-
       - name: Restore shared debug keystore
         run: |
           echo "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" | base64 -d > debug.keystore
@@ -61,19 +55,6 @@ jobs:
           test $(stat -c%s app/src/main/assets/tts/vi_VN-vais1000-medium.onnx) -gt 10000000
           test $(stat -c%s app/src/main/assets/tts/vi_VN-vais1000-medium.onnx.json) -gt 1000
           ls -la app/src/main/assets/tts/
-
-      - name: Download LAME 3.100 (MP3 encoder sources)
-        run: |
-          curl -sL -o /tmp/lame-3.100.tar.gz "https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz/download"
-          tar xzf /tmp/lame-3.100.tar.gz -C /tmp lame-3.100/libmp3lame lame-3.100/include/lame.h
-          mkdir -p app/src/main/cpp
-          mv /tmp/lame-3.100/libmp3lame app/src/main/cpp/lame
-          # lame.h nằm ở include/, không nằm cùng các file .c — phải copy về
-          # cùng thư mục thì #include "lame.h" trong các file .c mới tìm thấy.
-          cp /tmp/lame-3.100/include/lame.h app/src/main/cpp/lame/lame.h
-          for f in bitstream encoder fft gain_analysis id3tag lame newmdct presets psymodel quantize quantize_pvt reservoir set_get tables takehiro util vbrquantize VbrTag version; do test -f app/src/main/cpp/lame/$f.c || exit 1; done
-          test -f app/src/main/cpp/lame/lame.h
-          ls app/src/main/cpp/lame/ | head -5
 
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
