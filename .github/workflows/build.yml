@@ -86,6 +86,32 @@ jobs:
           print("TTS model metadata:", got)
           EOF
 
+      - name: Generate TTS tokens.txt from model json
+        run: |
+          # sherpa-onnx đổi âm vị thành id qua tokens.txt; thiếu file này là
+          # generate trả về 0 mẫu (WAV trắng 44 byte) mà không báo lỗi.
+          # Sinh từ phoneme_id_map trong .onnx.json, xếp theo id tăng dần.
+          # Bỏ 5 nguyên âm đôi 2 ký tự (aɪ, aʊ, ɔɪ, eɪ, oʊ): ReadPiperTokens
+          # chỉ nhận 1 ký tự/dòng, gặp dòng 2 ký tự là exit() luôn. Lúc chạy,
+          # các âm đôi này được đổi từng ký tự một ('a' rồi 'ɪ'), cả 2 đều
+          # có id riêng trong bảng nên vẫn đọc được.
+          python3 - <<'EOF'
+          import json
+          d = json.load(open("app/src/main/assets/tts/vi_VN-vais1000-medium.onnx.json"))
+          pim = d["phoneme_id_map"]
+          lines = []
+          for ph, ids in sorted(pim.items(), key=lambda kv: kv[1][0]):
+              if len(ph) != 1:
+                  continue
+              lines.append(f"{ph} {ids[0]}")
+          assert any(l == "_ 0" for l in lines), "missing pad '_'"
+          assert any(l == "^ 1" for l in lines), "missing bos '^'"
+          assert any(l == "$ 2" for l in lines), "missing eos '$'"
+          open("app/src/main/assets/tts/tokens.txt", "w", encoding="utf-8").write(
+              "\n".join(lines) + "\n")
+          print(f"tokens.txt: {len(lines)} entries")
+          EOF
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
