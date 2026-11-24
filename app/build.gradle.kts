@@ -12,12 +12,28 @@ android {
         applicationId = "asia.so1.vietnote"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // Chỉ build cho arm64 (máy đích: OnePlus 15) để APK nhẹ hơn.
         // AAR sherpa-onnx chứa cả 4 ABI; lọc ở đây để khỏi đóng gói thừa.
         ndk {
             abiFilters += "arm64-v8a"
+        }
+        // NDK + CMake do workflow cài đúng phiên bản này (sdkmanager).
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-O3"
+            }
+        }
+    }
+
+    // NDK ghim đúng phiên bản workflow cài, tránh máy build tự chọn NDK khác.
+    ndkVersion = "27.2.12479018"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -64,6 +80,9 @@ dependencies {
     // AAR sherpa-onnx 2.0.3 do workflow tải về app/libs/ lúc build
     // (không commit file 50 MB này lên repo).
     implementation(files("libs/sherpa-onnx-2.0.3.aar"))
+    // piper-phonemize: chuyển văn bản thành âm vị cho giọng đọc Piper
+    // (espeak-ng). Thư viện của k2-fsa, phát hành qua JitPack.
+    implementation("com.github.csukuangfj.piper-phonemize:piper-phonemize:1.6.1")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")

@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -14,10 +15,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+// ---------------------------------------------------------------- ASR
 
 enum class AsrStatus { PREPARING, READY, RECORDING, ERROR }
 
@@ -73,8 +79,105 @@ class MainViewModel : ViewModel() {
     }
 }
 
+// ---------------------------------------------------------------- TTS
+
+enum class TtsStatus { PREPARING, READY, GENERATING, ERROR }
+
+data class TtsUiState(
+    val status: TtsStatus = TtsStatus.PREPARING,
+    val text: String = "",
+    val speed: Float = 1.0f,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    val files: List<TtsFile> = emptyList(),
+    val playingUri: Uri? = null,
+    val error: String? = null,
+)
+
+class TtsViewModel : ViewModel() {
+    private val _uiState = MutableStateFlow(TtsUiState())
+    val uiState: StateFlow<TtsUiState> = _uiState.asStateFlow()
+
+    private var engine: TtsEngine? = null
+
+    fun attachEngine(e: TtsEngine) {
+        engine = e
+        e.onReady = {
+            _uiState.update { it.copy(status = TtsStatus.READY, error = null) }
+            refreshFiles()
+        }
+        e.onError = { msg ->
+            _uiState.update { it.copy(status = TtsStatus.ERROR, error = msg) }
+        }
+        e.onPlayFinished = {
+            _uiState.update { it.copy(playingUri = null) }
+        }
+    }
+
+    /** Nạp giọng đọc (chỉ chạy 1 lần, khi mở tab Đọc lần đầu). */
+    fun ensureInit() {
+        engine?.initAsync()
+    }
+
+    fun setText(t: String) {
+        _uiState.update { it.copy(text = t) }
+    }
+
+    fun setSpeed(s: Float) {
+        _uiState.update { it.copy(speed = s) }
+    }
+
+    fun generate() {
+        val e = engine ?: return
+        val st = _uiState.value
+        if (st.status != TtsStatus.READY || st.text.isBlank()) return
+        _uiState.update {
+            it.copy(status = TtsStatus.GENERATING, progressDone = 0, progressTotal = 0)
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val uri = e.synthesize(st.text, st.speed) { done, total ->
+                _uiState.update { it.copy(progressDone = done, progressTotal = total) }
+            }
+            _uiState.update {
+                it.copy(
+                    status = if (uri != null) TtsStatus.READY else TtsStatus.ERROR,
+                    progressDone = 0,
+                    progressTotal = 0,
+                )
+            }
+            if (uri != null) refreshFiles()
+        }
+    }
+
+    fun refreshFiles() {
+        viewModelScope.launch(Dispatchers.Default) {
+            val files = engine?.listFiles() ?: emptyList()
+            _uiState.update { it.copy(files = files) }
+        }
+    }
+
+    fun togglePlay(uri: Uri) {
+        val playing = engine?.togglePlay(uri) ?: false
+        _uiState.update { it.copy(playingUri = if (playing) uri else null) }
+    }
+
+    fun deleteFile(uri: Uri) {
+        viewModelScope.launch(Dispatchers.Default) {
+            if (engine?.deleteFile(uri) == true) refreshFiles()
+        }
+    }
+
+    override fun onCleared() {
+        engine?.release()
+        super.onCleared()
+    }
+}
+
+// ---------------------------------------------------------------- Activity
+
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private val ttsViewModel: TtsViewModel by viewModels()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -90,9 +193,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val engine = AsrEngine(this)
         viewModel.attachEngine(engine)
+        val ttsEngine = TtsEngine(this)
+        ttsViewModel.attachEngine(ttsEngine)
         setContent {
             VietNoteApp(
-                uiState = viewModel.uiState,
+                asrState = viewModel.uiState,
+                ttsState = ttsViewModel.uiState,
                 onMicClick = {
                     viewModel.toggleRecording(hasMicPermission()) {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -101,6 +207,13 @@ class MainActivity : ComponentActivity() {
                 onClear = { viewModel.clearAll() },
                 onCopyAll = { copyAll() },
                 onShare = { shareAll() },
+                onTtsTabSelected = { ttsViewModel.ensureInit() },
+                onTtsTextChange = { ttsViewModel.setText(it) },
+                onTtsSpeedChange = { ttsViewModel.setSpeed(it) },
+                onTtsGenerate = { ttsViewModel.generate() },
+                onTtsPlay = { ttsViewModel.togglePlay(it) },
+                onTtsShare = { shareFile(it) },
+                onTtsDelete = { ttsViewModel.deleteFile(it) },
             )
         }
     }
@@ -138,5 +251,14 @@ class MainActivity : ComponentActivity() {
             putExtra(Intent.EXTRA_TEXT, text)
         }
         startActivity(Intent.createChooser(intent, "Chia sẻ bản ghi"))
+    }
+
+    private fun shareFile(uri: Uri) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "audio/mpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, "Chia sẻ file MP3"))
     }
 }
